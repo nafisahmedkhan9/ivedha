@@ -1,0 +1,70 @@
+- name: RBCAPP1 Monitoring Playbook
+  hosts: all
+  gather_facts: yes
+  vars:
+    action: "{{ action }}"
+    alert_email_to: "nakfaaltu@gmail.com"
+    healthcheck_url: "http://127.0.0.1:8000/healthcheck"
+  tasks:
+    - name: Verify httpd installed on host1 (RHEL example)
+      dnf:
+        name: httpd
+        state: present
+      when: action == "verify_install" and inventory_hostname == "host1"
+
+    - name: Check root filesystem usage percent
+      shell: "df -P / | awk 'NR==2 {gsub(\"%\", \"\", $5); print $5}'"
+      register: disk_usage
+      changed_when: false
+      when: action == "check-disk"
+
+    - name: Report disk usage
+      debug:
+        msg: "Host {{ inventory_hostname }} root usage is {{ disk_usage.stdout }}%"
+      when: action == "check-disk"
+
+    - name: Flag disk threshold breach
+      set_fact:
+        disk_alert: "{{ (disk_usage.stdout | int) > 80 }}"
+      when: action == "check-disk"
+
+    - name: Send disk alert email when usage above 80%
+      mail:
+        host: localhost
+        port: 25
+        to: "{{ alert_email_to }}"
+        subject: "RBCAPP1 disk alert on {{ inventory_hostname }}"
+        body: "Disk usage is {{ disk_usage.stdout }}% on {{ inventory_hostname }} (threshold: 80%)."
+      when: action == "check-disk" and (disk_alert | default(false) | bool)
+
+    - name: Show no-alert message for healthy disk usage
+      debug:
+        msg: "Disk usage on {{ inventory_hostname }} is within threshold."
+      when: action == "check-disk" and not (disk_alert | default(false) | bool)
+
+    - name: Check application status via API (run once)
+      uri:
+        url: "{{ healthcheck_url }}"
+        method: GET
+        return_content: yes
+      register: app_status
+      delegate_to: localhost
+      run_once: true
+      when: action == "check-status"
+
+    - name: Parse down services list
+      set_fact:
+        down_services: "{{ (app_status.json.down_services | default([])) }}"
+      delegate_to: localhost
+      run_once: true
+      when: action == "check-status"
+
+    - name: Show rbcapp1 status and down services
+      debug:
+        msg:
+          - "application_name=rbcapp1"
+          - "application_status={{ app_status.json.application_status }}"
+          - "down_services={{ down_services | join(', ') if (down_services | length > 0) else 'none' }}"
+      delegate_to: localhost
+      run_once: true
+      when: action == "check-status"
