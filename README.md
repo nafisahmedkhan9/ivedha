@@ -23,7 +23,7 @@ python -m venv venv
 ### 2) Install Python dependencies
 
 ```bash
-pip install fastapi uvicorn elasticsearch pandas python-multipart
+pip install fastapi uvicorn elasticsearch pandas python-multipart pyjwt
 ```
 
 ### 3) Setup Elasticsearch locally

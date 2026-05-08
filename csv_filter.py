@@ -1,24 +1,21 @@
-import pandas as pd
 from pathlib import Path
 
-input_file = Path("sales-data.csv")
-df = pd.read_csv(input_file)
+import pandas as pd
 
-# Remove invalid rows (important!)
-df = df[df["sq__ft"] > 0]
 
-# Compute price per square foot
-df["price_per_sqft"] = df["price"] / df["sq__ft"]
+def run_csv_filter(input_file: Path, output_file: Path) -> None:
+    df = pd.read_csv(input_file)
 
-# Calculate average
-avg_price = df["price_per_sqft"].mean()
+    # Keep only valid rows before price-per-sqft calculation.
+    df = df[df["sq__ft"] > 0]
+    df["price_per_sqft"] = df["price"] / df["sq__ft"]
+    avg_price = df["price_per_sqft"].mean()
+    filtered_df = df[df["price_per_sqft"] < avg_price]
+    filtered_df.to_csv(output_file, index=False)
 
-print("Average price per sqft:", avg_price)
+    print("Average price per sqft:", avg_price)
+    print(f"Filtered CSV created successfully at {output_file}")
 
-# Filter below average
-filtered_df = df[df["price_per_sqft"] < avg_price]
 
-# Save output
-filtered_df.to_csv("filtered_sales.csv", index=False)
-
-print("Filtered CSV created successfully")
+if __name__ == "__main__":
+    run_csv_filter(input_file=Path("sales-data.csv"), output_file=Path("filtered_sales.csv"))

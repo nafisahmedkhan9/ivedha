@@ -1,11 +1,16 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from elasticsearch import Elasticsearch
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, BackgroundTasks
 from datetime import datetime
 import json
+from elasticsearch import Elasticsearch
+
+from auth import create_access_token
+from background_jobs import run_csv_filter_job
+from dependencies import get_es_client
+from middleware import HomeJWTMiddleware
 
 app = FastAPI()
+app.add_middleware(HomeJWTMiddleware)
 
-es = Elasticsearch("http://localhost:9200")
 INDEX_NAME = "service-health"
 EXPECTED_SERVICES = ["httpd", "rabbitmq", "postgresql"]
 VALID_STATUSES = {"UP", "DOWN"}
@@ -18,8 +23,17 @@ def home():
     }
 
 
+@app.post("/token")
+def get_token(username: str):
+    token = create_access_token({"sub": username})
+    return {"access_token": token, "token_type": "bearer"}
+
+
 @app.post("/add")
-async def add_data(file: UploadFile = File(...)):
+async def add_data(
+    file: UploadFile = File(...),
+    es: Elasticsearch = Depends(get_es_client),
+):
     content = await file.read()
     try:
         payload = json.loads(content)
@@ -54,7 +68,7 @@ async def add_data(file: UploadFile = File(...)):
 
 
 @app.get("/healthcheck")
-def healthcheck():
+def healthcheck(es: Elasticsearch = Depends(get_es_client)):
     response = es.search(
         index=INDEX_NAME,
         query={"match_all": {}},
@@ -91,7 +105,7 @@ def healthcheck():
 
 
 @app.get("/healthcheck/{service_name}")
-def service_health(service_name: str):
+def service_health(service_name: str, es: Elasticsearch = Depends(get_es_client)):
     response = es.search(
         index=INDEX_NAME,
         query={
@@ -116,4 +130,16 @@ def service_health(service_name: str):
         "application_name": "rbcapp1",
         "service_name": source.get("service_name", service_name.lower()),
         "application_status": status
+    }
+
+
+@app.post("/csv-filter/run")
+def run_csv_filter(background_tasks: BackgroundTasks):
+    background_tasks.add_task(run_csv_filter_job)
+    return {"message": "CSV filter job started in background"}
+
+@app.get("/welcome")
+def welcome(name: str):
+    return {
+        "message": f"Welcome to the RBCAPP1 Monitoring API {name}"
     }
